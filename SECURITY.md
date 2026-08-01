@@ -13,8 +13,8 @@ private pull-request data, API keys, or complete report URLs in a public issue.
 
 - The Action reads pull-request metadata and patches through the GitHub API. It does not check out
   or execute code from the pull request.
-- Pull-request data is sent to the configured OpenAI API using the caller's API key. Requests set
-  `store: false`.
+- Pull-request data is sent directly to the selected OpenAI or Anthropic API using the caller's API
+  key. OpenAI requests set `store: false`; Anthropic requests use the Messages API.
 - The complete report is encoded in the URL fragment. Anyone who receives that complete URL can
   decode the report, so links for private pull requests must be treated as sensitive.
 - Browsers do not send URL fragments in the HTTP request for the Viewer page. The Viewer has no

@@ -14,10 +14,51 @@ describe("action configuration", () => {
     };
     const config = readActionConfig((name) => values[name] ?? "");
 
+    expect(config.provider).toBe("openai");
+    expect(config.apiKey).toBe("openai-key");
     expect(config.language).toBe("auto");
     expect(config.model).toBe("gpt-5.6-terra");
     expect(config.viewerUrl).toBe("https://rhty.github.io/pr-explainer/");
     expect(config.maxUrlChars).toBe(48_000);
+  });
+
+  it("uses the Anthropic default with the provider-neutral API key", () => {
+    const values: Record<string, string> = {
+      "github-token": "github-token",
+      "api-key": "anthropic-key",
+      provider: "anthropic",
+    };
+    const config = readActionConfig((name) => values[name] ?? "");
+
+    expect(config.provider).toBe("anthropic");
+    expect(config.apiKey).toBe("anthropic-key");
+    expect(config.model).toBe("claude-sonnet-5");
+  });
+
+  it("passes a custom provider model ID through unchanged", () => {
+    const values: Record<string, string> = {
+      "github-token": "github-token",
+      "api-key": "anthropic-key",
+      provider: "anthropic",
+      model: "claude-opus-5",
+    };
+    const config = readActionConfig((name) => values[name] ?? "");
+
+    expect(config.model).toBe("claude-opus-5");
+  });
+
+  it("rejects unsupported providers and missing provider keys", () => {
+    expect(() =>
+      readActionConfig((name) => (name === "provider" ? "other" : "secret")),
+    ).toThrow(/Invalid provider/u);
+
+    expect(() =>
+      readActionConfig((name) => {
+        if (name === "github-token") return "github-token";
+        if (name === "provider") return "anthropic";
+        return "";
+      }),
+    ).toThrow(/api-key is required/u);
   });
 
   it("rejects unsafe viewer URLs", () => {

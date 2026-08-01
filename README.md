@@ -3,16 +3,16 @@
 Turn GitHub pull requests into interactive, AI-generated HTML explanations.
 
 PR Explainer is a backendless GitHub Action and static Viewer for teams that want to understand a
-change before reviewing every line. The Action reads a PR through the GitHub API, asks OpenAI to
-produce a standalone HTML explanation, compresses the report into a URL fragment, and posts the
-Viewer link back to the PR.
+change before reviewing every line. The Action reads a PR through the GitHub API, asks OpenAI or
+Anthropic to produce a standalone HTML explanation, compresses the report into a URL fragment, and
+posts the Viewer link back to the PR.
 
 ```text
 /pr-explain
      ↓
-GitHub Action → OpenAI Responses API → HTML → gzip + Base64URL
-                                                ↓
-                       GitHub Pages Viewer ← URL fragment
+GitHub Action → OpenAI / Anthropic → HTML → gzip + Base64URL
+                                             ↓
+                    GitHub Pages Viewer ← URL fragment
 ```
 
 No PR report database, account, OAuth flow, or application backend is required.
@@ -24,14 +24,15 @@ No PR report database, account, OAuth flow, or application backend is required.
 - Responsive, printable HTML generated specifically for each pull request
 - Japanese, English, or any BCP 47 output language
 - A browser-only Viewer with sandboxing, sanitization, and pinned Mermaid support
-- Bring-your-own OpenAI API key stored in the consuming repository's Actions secrets
+- OpenAI and Anthropic support with a caller-selected model ID
+- Bring your own provider API key, stored in the consuming repository's Actions secrets
 
 ## Install
 
-### 1. Add the OpenAI key
+### 1. Add a provider key
 
 In the repository that will use PR Explainer, open **Settings → Secrets and variables → Actions**
-and create a repository or organization secret named `OPENAI_API_KEY`.
+and create a repository or organization secret such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`.
 
 ### 2. Add the workflow
 
@@ -57,12 +58,28 @@ jobs:
 
     steps:
       - name: Generate interactive PR explanation
-        uses: rhty/pr-explainer@v0
+        uses: rhty/pr-explainer@v0.2.0
         with:
           github-token: ${{ github.token }}
-          openai-api-key: ${{ secrets.OPENAI_API_KEY }}
+          provider: openai
+          api-key: ${{ secrets.OPENAI_API_KEY }}
           language: auto
 ```
+
+To use Claude instead, change the provider, secret, and optionally the model:
+
+```yaml
+with:
+  github-token: ${{ github.token }}
+  provider: anthropic
+  api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+  model: claude-sonnet-5
+  language: ja
+```
+
+`model` accepts a model ID supported by the selected provider and passes it through unchanged. For
+example, set `gpt-5.6-sol` for OpenAI or `claude-opus-5` for Anthropic. When omitted, it defaults to
+`gpt-5.6-terra` for OpenAI and `claude-sonnet-5` for Anthropic.
 
 The workflow must exist on the consuming repository's default branch. Organizations that restrict
 third-party Actions must also allow `rhty/pr-explainer`.
@@ -86,20 +103,24 @@ The Action updates its previous report comment instead of adding a new comment o
 
 ## Configuration
 
-| Input                 | Default         | Description                                            |
-| --------------------- | --------------- | ------------------------------------------------------ |
-| `github-token`        | required        | Token used to read the PR and write its report comment |
-| `openai-api-key`      | required        | Caller-owned OpenAI API key                            |
-| `language`            | `auto`          | BCP 47 language such as `ja`, `en`, or `zh-CN`         |
-| `model`               | `gpt-5.6-terra` | OpenAI model used for HTML generation                  |
-| `reasoning-effort`    | `low`           | `none`, `low`, `medium`, `high`, `xhigh`, or `max`     |
-| `viewer-url`          | hosted Viewer   | Custom static Viewer base URL                          |
-| `command`             | `/pr-explain`   | Comment command recognized by the Action               |
-| `minimum-permission`  | `write`         | Minimum permission required to spend the API key       |
-| `max-diff-chars`      | `180000`        | Maximum patch characters sent to the model             |
-| `max-url-chars`       | `48000`         | Maximum generated report URL length                    |
-| `custom-instructions` | empty           | Additional report-generation guidance                  |
-| `pull-number`         | inferred        | Explicit PR number for manual or custom workflows      |
+| Input                 | Default            | Description                                            |
+| --------------------- | ------------------ | ------------------------------------------------------ |
+| `github-token`        | required           | Token used to read the PR and write its report comment |
+| `api-key`             | required           | Caller-owned key for the selected provider             |
+| `provider`            | `openai`           | `openai` or `anthropic`                                |
+| `model`               | provider-dependent | Provider model ID, passed through unchanged            |
+| `language`            | `auto`             | BCP 47 language such as `ja`, `en`, or `zh-CN`         |
+| `reasoning-effort`    | `low`              | OpenAI-only reasoning effort                           |
+| `viewer-url`          | hosted Viewer      | Custom static Viewer base URL                          |
+| `command`             | `/pr-explain`      | Comment command recognized by the Action               |
+| `minimum-permission`  | `write`            | Minimum permission required to spend the API key       |
+| `max-diff-chars`      | `180000`           | Maximum patch characters sent to the model             |
+| `max-url-chars`       | `48000`            | Maximum generated report URL length                    |
+| `custom-instructions` | empty              | Additional report-generation guidance                  |
+| `pull-number`         | inferred           | Explicit PR number for manual or custom workflows      |
+
+`openai-api-key` remains available as a deprecated alias for `api-key` when `provider: openai`, so
+existing v0.1 workflows continue to work. `reasoning-effort` is ignored by Anthropic.
 
 The `auto` language mode looks at the PR title and body. A comment's `--lang` value always wins.
 The generated document sets its own language, while the Viewer currently localizes its chrome in
@@ -110,7 +131,8 @@ Japanese and English.
 PR Explainer intentionally uses a capability-link model:
 
 - The Action runs in the consuming repository and never checks out or executes PR code.
-- PR metadata and included patches are sent directly to OpenAI with `store: false`.
+- PR metadata and included patches are sent directly to the selected provider. OpenAI requests set
+  `store: false`; Anthropic requests use the Messages API.
 - The resulting HTML is compressed into the part of the URL after `#`. Browsers do not send that
   fragment when requesting the static Viewer page.
 - There is no analytics endpoint or report storage service.
@@ -174,8 +196,9 @@ The Action and Viewer share a versioned payload contract in `src/shared/payload.
 ## 日本語
 
 PR Explainerは、GitHubのPR差分をAIが読み解き、レビューしやすいインタラクティブなHTML
-レポートに変換するGitHub Actionです。利用Repo側のOpenAI APIキーを使い、生成HTMLはURLの
-フラグメントに圧縮して載せるため、レポート保存用のバックエンドはありません。
+レポートに変換するGitHub Actionです。OpenAIまたはAnthropicと任意のモデル名を選択でき、
+利用Repo側のAPIキーを使います。生成HTMLはURLのフラグメントに圧縮して載せるため、
+レポート保存用のバックエンドはありません。
 
 導入後、PRに `/pr-explain` または `/pr-explain --lang ja` とコメントすると、同じPRに
 Viewerへのリンクが投稿されます。Private Repoでは、その完全なURL自体を機密情報として扱って

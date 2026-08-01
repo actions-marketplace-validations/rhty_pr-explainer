@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.2.0 - 2026-08-01
+
+- Add Anthropic Messages API support with `provider: anthropic`.
+- Add provider-neutral `api-key` and pass custom `model` IDs through unchanged.
+- Select provider-specific default models while preserving the v0.1 `openai-api-key` input.
+- Report the selected provider and model in Action outputs, summaries, and PR comments.
+
 ## 0.1.0 - 2026-08-01
 
 - Generate interactive HTML explanations from GitHub pull-request metadata and patches.

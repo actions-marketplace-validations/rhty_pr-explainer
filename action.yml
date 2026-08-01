@@ -9,9 +9,16 @@ inputs:
   github-token:
     description: Token used to read the pull request and publish its report link.
     required: true
+  api-key:
+    description: API key for the selected AI provider.
+    required: false
   openai-api-key:
-    description: OpenAI API key used to generate the HTML explanation.
-    required: true
+    description: Deprecated alias for api-key when provider is openai.
+    required: false
+  provider:
+    description: AI provider used to generate the explanation (openai or anthropic).
+    default: openai
+    required: false
   pull-number:
     description: Pull request number. Inferred from issue_comment and pull_request events when omitted.
     required: false
@@ -20,11 +27,10 @@ inputs:
     default: auto
     required: false
   model:
-    description: OpenAI model used to generate the explanation.
-    default: gpt-5.6-terra
+    description: Provider model ID. Defaults to gpt-5.6-terra for OpenAI or claude-sonnet-5 for Anthropic.
     required: false
   reasoning-effort:
-    description: OpenAI reasoning effort (none, low, medium, high, xhigh, or max).
+    description: OpenAI reasoning effort (none, low, medium, high, xhigh, or max). Ignored for Anthropic.
     default: low
     required: false
   viewer-url:
@@ -54,6 +60,10 @@ inputs:
 outputs:
   report-url:
     description: URL of the generated interactive explanation.
+  report-provider:
+    description: AI provider used to generate the explanation.
+  report-model:
+    description: Model ID used to generate the explanation.
   report-language:
     description: Resolved BCP 47 language of the report.
   report-bytes:

@@ -1,29 +1,21 @@
 import { normalizeHtml } from "./html";
 
-export interface GenerateHtmlOptions {
+export interface GenerateAnthropicHtmlOptions {
   apiKey: string;
   model: string;
-  reasoningEffort: string;
   instructions: string;
   input: string;
   fetchImplementation?: typeof fetch;
 }
 
-interface OpenAiResponse {
-  status?: string;
-  error?: { message?: string } | null;
-  incomplete_details?: { reason?: string } | null;
-  output?: Array<{
-    type?: string;
-    content?: Array<{
-      type?: string;
-      text?: string;
-    }>;
-  }>;
+interface AnthropicResponse {
+  error?: { message?: string };
+  content?: Array<{ type?: string; text?: string }>;
+  stop_reason?: string | null;
 }
 
-export async function generateHtmlWithOpenAi(
-  options: GenerateHtmlOptions,
+export async function generateHtmlWithAnthropic(
+  options: GenerateAnthropicHtmlOptions,
 ): Promise<string> {
   const fetchImplementation = options.fetchImplementation ?? fetch;
   let lastError: Error | undefined;
@@ -31,21 +23,19 @@ export async function generateHtmlWithOpenAi(
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
       const response = await fetchImplementation(
-        "https://api.openai.com/v1/responses",
+        "https://api.anthropic.com/v1/messages",
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${options.apiKey}`,
-            "Content-Type": "application/json",
+            "x-api-key": options.apiKey,
+            "anthropic-version": "2023-06-01",
+            "content-type": "application/json",
           },
           body: JSON.stringify({
             model: options.model,
-            instructions: options.instructions,
-            input: options.input,
-            reasoning: { effort: options.reasoningEffort },
-            max_output_tokens: 24_000,
-            store: false,
-            text: { format: { type: "text" } },
+            max_tokens: 24_000,
+            system: options.instructions,
+            messages: [{ role: "user", content: options.input }],
           }),
           signal: AbortSignal.timeout(360_000),
         },
@@ -53,9 +43,11 @@ export async function generateHtmlWithOpenAi(
 
       if (!response.ok) {
         const message = await readErrorMessage(response);
-        const requestId = response.headers.get("x-request-id");
+        const requestId =
+          response.headers.get("request-id") ??
+          response.headers.get("x-request-id");
         const error = new Error(
-          `OpenAI API returned ${response.status}: ${message}${requestId ? ` (request ${requestId})` : ""}`,
+          `Anthropic API returned ${response.status}: ${message}${requestId ? ` (request ${requestId})` : ""}`,
         );
 
         if (
@@ -69,14 +61,23 @@ export async function generateHtmlWithOpenAi(
         throw error;
       }
 
-      const result = (await response.json()) as OpenAiResponse;
+      const result = (await response.json()) as AnthropicResponse;
       if (result.error?.message) throw new Error(result.error.message);
+      if (result.stop_reason === "max_tokens") {
+        throw new Error(
+          "Anthropic stopped at max_tokens before completing the HTML document.",
+        );
+      }
 
-      const html = extractOutputText(result);
+      const html = (result.content ?? [])
+        .filter((block) => block.type === "text")
+        .map((block) => block.text ?? "")
+        .join("\n")
+        .trim();
       if (!html) {
-        const reason =
-          result.incomplete_details?.reason ?? result.status ?? "unknown";
-        throw new Error(`OpenAI returned no HTML output (status: ${reason}).`);
+        throw new Error(
+          `Anthropic returned no HTML output (stop reason: ${result.stop_reason ?? "unknown"}).`,
+        );
       }
 
       return normalizeHtml(html);
@@ -90,17 +91,9 @@ export async function generateHtmlWithOpenAi(
     }
   }
 
-  throw lastError ?? new Error("OpenAI request failed after three attempts.");
-}
-
-function extractOutputText(result: OpenAiResponse): string {
-  return (result.output ?? [])
-    .filter((item) => item.type === "message")
-    .flatMap((item) => item.content ?? [])
-    .filter((content) => content.type === "output_text")
-    .map((content) => content.text ?? "")
-    .join("\n")
-    .trim();
+  throw (
+    lastError ?? new Error("Anthropic request failed after three attempts.")
+  );
 }
 
 async function readErrorMessage(response: Response): Promise<string> {

@@ -9,7 +9,7 @@ import {
   loadPullRequest,
   publishReportComment,
 } from "./github";
-import { generateHtmlWithOpenAi } from "./openai";
+import { generateHtml } from "./provider";
 import { buildModelRequest } from "./prompt";
 import { createReportPayload, createReportUrl } from "./report";
 
@@ -19,7 +19,7 @@ export async function run(): Promise<void> {
   try {
     const config = readActionConfig(core.getInput);
     core.setSecret(config.githubToken);
-    core.setSecret(config.openAiApiKey);
+    core.setSecret(config.apiKey);
 
     const commentBody = getCommentBody(github.context);
     if (
@@ -64,9 +64,12 @@ export async function run(): Promise<void> {
       config.customInstructions,
     );
 
-    core.info(`Generating a ${language} report with ${config.model}.`);
-    const html = await generateHtmlWithOpenAi({
-      apiKey: config.openAiApiKey,
+    core.info(
+      `Generating a ${language} report with ${config.provider}/${config.model}.`,
+    );
+    const html = await generateHtml({
+      provider: config.provider,
+      apiKey: config.apiKey,
       model: config.model,
       reasoningEffort: config.reasoningEffort,
       instructions: modelRequest.instructions,
@@ -94,18 +97,23 @@ export async function run(): Promise<void> {
       createCommentBody(
         reportUrl,
         language,
+        config.provider,
         config.model,
         pullRequest.diffTruncated,
       ),
     );
 
     core.setOutput("report-url", reportUrl);
+    core.setOutput("report-provider", config.provider);
+    core.setOutput("report-model", config.model);
     core.setOutput("report-language", language);
     core.setOutput("report-bytes", Buffer.byteLength(html, "utf8").toString());
     await core.summary
       .addHeading("PR Explainer")
       .addLink("Open the interactive report", reportUrl)
-      .addRaw(`\n\nLanguage: ${language} · Model: ${config.model}`)
+      .addRaw(
+        `\n\nLanguage: ${language} · Provider: ${config.provider} · Model: ${config.model}`,
+      )
       .write();
   } catch (error) {
     core.setFailed(error instanceof Error ? error.message : String(error));
@@ -115,6 +123,7 @@ export async function run(): Promise<void> {
 function createCommentBody(
   reportUrl: string,
   language: string,
+  provider: string,
   model: string,
   diffTruncated: boolean,
 ): string {
@@ -132,7 +141,7 @@ function createCommentBody(
       : "\n\n> Parts of the diff were omitted to stay within the configured input limit."
     : "";
 
-  return `${REPORT_MARKER}\n## ${title}\n\n[${link}](${reportUrl})\n\n<sub>${language} · ${model}</sub>\n\n> ${warning}${truncation}`;
+  return `${REPORT_MARKER}\n## ${title}\n\n[${link}](${reportUrl})\n\n<sub>${language} · ${provider}/${model}</sub>\n\n> ${warning}${truncation}`;
 }
 
 void run();

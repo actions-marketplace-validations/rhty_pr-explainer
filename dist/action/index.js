@@ -37082,10 +37082,20 @@ const PERMISSION_LEVELS = [
 ];
 function readActionConfig(getInput) {
     const pullNumberInput = getInput("pull-number").trim();
+    const providerInput = getInput("provider").trim().toLowerCase() || "openai";
     const language = getInput("language").trim() || "auto";
     const reasoningEffort = getInput("reasoning-effort").trim() || "low";
     const minimumPermission = (getInput("minimum-permission").trim() ||
         "write");
+    if (providerInput !== "openai" && providerInput !== "anthropic") {
+        throw new Error(`Invalid provider '${providerInput}'. Use openai or anthropic.`);
+    }
+    const provider = providerInput;
+    const apiKey = getInput("api-key").trim() ||
+        (provider === "openai" ? getInput("openai-api-key").trim() : "");
+    if (!apiKey) {
+        throw new Error(`api-key is required for provider '${provider}'. Store it in GitHub Actions secrets.`);
+    }
     if (language !== "auto" && !BCP_47_PATTERN.test(language)) {
         throw new Error(`Invalid language '${language}'. Use a BCP 47 tag such as ja, en, or zh-CN, or use auto.`);
     }
@@ -37097,12 +37107,13 @@ function readActionConfig(getInput) {
     }
     return {
         githubToken: getInput("github-token", { required: true }),
-        openAiApiKey: getInput("openai-api-key", { required: true }),
+        apiKey,
+        provider,
         pullNumber: pullNumberInput
             ? parseInteger(pullNumberInput, "pull-number", 1, Number.MAX_SAFE_INTEGER)
             : undefined,
         language,
-        model: getInput("model").trim() || "gpt-5.6-terra",
+        model: getInput("model").trim() || defaultModel(provider),
         reasoningEffort,
         viewerUrl: validateViewerUrl(getInput("viewer-url").trim()),
         command: getInput("command").trim() || "/pr-explain",
@@ -37111,6 +37122,9 @@ function readActionConfig(getInput) {
         maxUrlChars: parseInteger(getInput("max-url-chars").trim() || "48000", "max-url-chars", 4_000, 64_000),
         customInstructions: getInput("custom-instructions").trim(),
     };
+}
+function defaultModel(provider) {
+    return provider === "anthropic" ? "claude-sonnet-5" : "gpt-5.6-terra";
 }
 function parseLanguageOverride(commentBody, command) {
     if (!commentBody || !commentBody.trimStart().startsWith(command))
@@ -37306,71 +37320,7 @@ function normalizePermission(permission) {
     return "none";
 }
 
-;// CONCATENATED MODULE: ./src/action/openai.ts
-async function generateHtmlWithOpenAi(options) {
-    const fetchImplementation = options.fetchImplementation ?? fetch;
-    let lastError;
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-        try {
-            const response = await fetchImplementation("https://api.openai.com/v1/responses", {
-                method: "POST",
-                headers: {
-                    Authorization: `Bearer ${options.apiKey}`,
-                    "Content-Type": "application/json",
-                },
-                body: JSON.stringify({
-                    model: options.model,
-                    instructions: options.instructions,
-                    input: options.input,
-                    reasoning: { effort: options.reasoningEffort },
-                    max_output_tokens: 24_000,
-                    store: false,
-                    text: { format: { type: "text" } },
-                }),
-                signal: AbortSignal.timeout(360_000),
-            });
-            if (!response.ok) {
-                const message = await readErrorMessage(response);
-                const requestId = response.headers.get("x-request-id");
-                const error = new Error(`OpenAI API returned ${response.status}: ${message}${requestId ? ` (request ${requestId})` : ""}`);
-                if ((response.status === 429 || response.status >= 500) &&
-                    attempt < 2) {
-                    lastError = error;
-                    await delay(retryDelay(response, attempt));
-                    continue;
-                }
-                throw error;
-            }
-            const result = (await response.json());
-            if (result.error?.message)
-                throw new Error(result.error.message);
-            const html = extractOutputText(result);
-            if (!html) {
-                const reason = result.incomplete_details?.reason ?? result.status ?? "unknown";
-                throw new Error(`OpenAI returned no HTML output (status: ${reason}).`);
-            }
-            return normalizeHtml(html);
-        }
-        catch (error) {
-            if (attempt < 2 && isRetryableNetworkError(error)) {
-                lastError = asError(error);
-                await delay(1_000 * 2 ** attempt);
-                continue;
-            }
-            throw error;
-        }
-    }
-    throw lastError ?? new Error("OpenAI request failed after three attempts.");
-}
-function extractOutputText(result) {
-    return (result.output ?? [])
-        .filter((item) => item.type === "message")
-        .flatMap((item) => item.content ?? [])
-        .filter((content) => content.type === "output_text")
-        .map((content) => content.text ?? "")
-        .join("\n")
-        .trim();
-}
+;// CONCATENATED MODULE: ./src/action/html.ts
 function normalizeHtml(output) {
     const withoutFence = output
         .replace(/^```(?:html)?\s*/iu, "")
@@ -37383,6 +37333,69 @@ function normalizeHtml(output) {
     return /^<!doctype html>/iu.test(withoutFence)
         ? withoutFence
         : `<!doctype html>\n${withoutFence}`;
+}
+
+;// CONCATENATED MODULE: ./src/action/anthropic.ts
+
+async function generateHtmlWithAnthropic(options) {
+    const fetchImplementation = options.fetchImplementation ?? fetch;
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const response = await fetchImplementation("https://api.anthropic.com/v1/messages", {
+                method: "POST",
+                headers: {
+                    "x-api-key": options.apiKey,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                body: JSON.stringify({
+                    model: options.model,
+                    max_tokens: 24_000,
+                    system: options.instructions,
+                    messages: [{ role: "user", content: options.input }],
+                }),
+                signal: AbortSignal.timeout(360_000),
+            });
+            if (!response.ok) {
+                const message = await readErrorMessage(response);
+                const requestId = response.headers.get("request-id") ??
+                    response.headers.get("x-request-id");
+                const error = new Error(`Anthropic API returned ${response.status}: ${message}${requestId ? ` (request ${requestId})` : ""}`);
+                if ((response.status === 429 || response.status >= 500) &&
+                    attempt < 2) {
+                    lastError = error;
+                    await delay(retryDelay(response, attempt));
+                    continue;
+                }
+                throw error;
+            }
+            const result = (await response.json());
+            if (result.error?.message)
+                throw new Error(result.error.message);
+            if (result.stop_reason === "max_tokens") {
+                throw new Error("Anthropic stopped at max_tokens before completing the HTML document.");
+            }
+            const html = (result.content ?? [])
+                .filter((block) => block.type === "text")
+                .map((block) => block.text ?? "")
+                .join("\n")
+                .trim();
+            if (!html) {
+                throw new Error(`Anthropic returned no HTML output (stop reason: ${result.stop_reason ?? "unknown"}).`);
+            }
+            return normalizeHtml(html);
+        }
+        catch (error) {
+            if (attempt < 2 && isRetryableNetworkError(error)) {
+                lastError = asError(error);
+                await delay(1_000 * 2 ** attempt);
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw (lastError ?? new Error("Anthropic request failed after three attempts."));
 }
 async function readErrorMessage(response) {
     try {
@@ -37409,6 +37422,122 @@ function asError(error) {
 }
 function delay(milliseconds) {
     return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+;// CONCATENATED MODULE: ./src/action/openai.ts
+
+async function generateHtmlWithOpenAi(options) {
+    const fetchImplementation = options.fetchImplementation ?? fetch;
+    let lastError;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+        try {
+            const response = await fetchImplementation("https://api.openai.com/v1/responses", {
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${options.apiKey}`,
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({
+                    model: options.model,
+                    instructions: options.instructions,
+                    input: options.input,
+                    reasoning: { effort: options.reasoningEffort },
+                    max_output_tokens: 24_000,
+                    store: false,
+                    text: { format: { type: "text" } },
+                }),
+                signal: AbortSignal.timeout(360_000),
+            });
+            if (!response.ok) {
+                const message = await openai_readErrorMessage(response);
+                const requestId = response.headers.get("x-request-id");
+                const error = new Error(`OpenAI API returned ${response.status}: ${message}${requestId ? ` (request ${requestId})` : ""}`);
+                if ((response.status === 429 || response.status >= 500) &&
+                    attempt < 2) {
+                    lastError = error;
+                    await openai_delay(openai_retryDelay(response, attempt));
+                    continue;
+                }
+                throw error;
+            }
+            const result = (await response.json());
+            if (result.error?.message)
+                throw new Error(result.error.message);
+            const html = extractOutputText(result);
+            if (!html) {
+                const reason = result.incomplete_details?.reason ?? result.status ?? "unknown";
+                throw new Error(`OpenAI returned no HTML output (status: ${reason}).`);
+            }
+            return normalizeHtml(html);
+        }
+        catch (error) {
+            if (attempt < 2 && openai_isRetryableNetworkError(error)) {
+                lastError = openai_asError(error);
+                await openai_delay(1_000 * 2 ** attempt);
+                continue;
+            }
+            throw error;
+        }
+    }
+    throw lastError ?? new Error("OpenAI request failed after three attempts.");
+}
+function extractOutputText(result) {
+    return (result.output ?? [])
+        .filter((item) => item.type === "message")
+        .flatMap((item) => item.content ?? [])
+        .filter((content) => content.type === "output_text")
+        .map((content) => content.text ?? "")
+        .join("\n")
+        .trim();
+}
+async function openai_readErrorMessage(response) {
+    try {
+        const body = (await response.json());
+        return body.error?.message ?? response.statusText;
+    }
+    catch {
+        return response.statusText || "Unknown error";
+    }
+}
+function openai_retryDelay(response, attempt) {
+    const retryAfter = Number(response.headers.get("retry-after"));
+    if (Number.isFinite(retryAfter) && retryAfter >= 0) {
+        return Math.min(retryAfter * 1_000, 20_000);
+    }
+    return 1_000 * 2 ** attempt;
+}
+function openai_isRetryableNetworkError(error) {
+    return (error instanceof TypeError ||
+        (error instanceof DOMException && error.name === "TimeoutError"));
+}
+function openai_asError(error) {
+    return error instanceof Error ? error : new Error(String(error));
+}
+function openai_delay(milliseconds) {
+    return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+;// CONCATENATED MODULE: ./src/action/provider.ts
+
+
+function generateHtml(options) {
+    if (options.provider === "anthropic") {
+        return generateHtmlWithAnthropic({
+            apiKey: options.apiKey,
+            model: options.model,
+            instructions: options.instructions,
+            input: options.input,
+            fetchImplementation: options.fetchImplementation,
+        });
+    }
+    return generateHtmlWithOpenAi({
+        apiKey: options.apiKey,
+        model: options.model,
+        reasoningEffort: options.reasoningEffort,
+        instructions: options.instructions,
+        input: options.input,
+        fetchImplementation: options.fetchImplementation,
+    });
 }
 
 ;// CONCATENATED MODULE: ./src/action/prompt.ts
@@ -37559,7 +37688,7 @@ async function run() {
     try {
         const config = readActionConfig(getInput);
         core_setSecret(config.githubToken);
-        core_setSecret(config.openAiApiKey);
+        core_setSecret(config.apiKey);
         const commentBody = getCommentBody(github_context);
         if (github_context.eventName === "issue_comment" &&
             !commentBody?.trimStart().startsWith(config.command)) {
@@ -37574,9 +37703,10 @@ async function run() {
         const pullRequest = await loadPullRequest(octokit, github_context, pullNumber, config.maxDiffChars);
         const language = resolveLanguage(config.language, commentBody, config.command, `${pullRequest.title}\n${pullRequest.body}`);
         const modelRequest = buildModelRequest(pullRequest, language, config.customInstructions);
-        info(`Generating a ${language} report with ${config.model}.`);
-        const html = await generateHtmlWithOpenAi({
-            apiKey: config.openAiApiKey,
+        info(`Generating a ${language} report with ${config.provider}/${config.model}.`);
+        const html = await generateHtml({
+            provider: config.provider,
+            apiKey: config.apiKey,
             model: config.model,
             reasoningEffort: config.reasoningEffort,
             instructions: modelRequest.instructions,
@@ -37592,21 +37722,23 @@ async function run() {
             html,
         });
         const reportUrl = createReportUrl(config.viewerUrl, payload, config.maxUrlChars);
-        await publishReportComment(octokit, github_context, pullNumber, createCommentBody(reportUrl, language, config.model, pullRequest.diffTruncated));
+        await publishReportComment(octokit, github_context, pullNumber, createCommentBody(reportUrl, language, config.provider, config.model, pullRequest.diffTruncated));
         setOutput("report-url", reportUrl);
+        setOutput("report-provider", config.provider);
+        setOutput("report-model", config.model);
         setOutput("report-language", language);
         setOutput("report-bytes", Buffer.byteLength(html, "utf8").toString());
         await summary
             .addHeading("PR Explainer")
             .addLink("Open the interactive report", reportUrl)
-            .addRaw(`\n\nLanguage: ${language} · Model: ${config.model}`)
+            .addRaw(`\n\nLanguage: ${language} · Provider: ${config.provider} · Model: ${config.model}`)
             .write();
     }
     catch (error) {
         setFailed(error instanceof Error ? error.message : String(error));
     }
 }
-function createCommentBody(reportUrl, language, model, diffTruncated) {
+function createCommentBody(reportUrl, language, provider, model, diffTruncated) {
     const japanese = language.toLowerCase().startsWith("ja");
     const title = japanese
         ? "PRのHTML解説を生成しました"
@@ -37620,7 +37752,7 @@ function createCommentBody(reportUrl, language, model, diffTruncated) {
             ? "\n\n> 一部の大きな差分は入力上限に合わせて省略されています。"
             : "\n\n> Parts of the diff were omitted to stay within the configured input limit."
         : "";
-    return `${REPORT_MARKER}\n## ${title}\n\n[${link}](${reportUrl})\n\n<sub>${language} · ${model}</sub>\n\n> ${warning}${truncation}`;
+    return `${REPORT_MARKER}\n## ${title}\n\n[${link}](${reportUrl})\n\n<sub>${language} · ${provider}/${model}</sub>\n\n> ${warning}${truncation}`;
 }
 void run();
 

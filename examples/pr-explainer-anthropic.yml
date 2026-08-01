@@ -1,4 +1,4 @@
-name: PR Explainer
+name: PR Explainer with Claude
 
 on:
   issue_comment:
@@ -20,6 +20,7 @@ jobs:
         uses: rhty/pr-explainer@v0.2.0
         with:
           github-token: ${{ github.token }}
-          provider: openai
-          api-key: ${{ secrets.OPENAI_API_KEY }}
+          provider: anthropic
+          api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          model: claude-sonnet-5
           language: auto

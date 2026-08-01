@@ -17,10 +17,12 @@ const PERMISSION_LEVELS = [
 ] as const;
 
 export type PermissionLevel = (typeof PERMISSION_LEVELS)[number];
+export type AiProvider = "openai" | "anthropic";
 
 export interface ActionConfig {
   githubToken: string;
-  openAiApiKey: string;
+  apiKey: string;
+  provider: AiProvider;
   pullNumber?: number;
   language: string;
   model: string;
@@ -37,10 +39,27 @@ type InputGetter = (name: string, options?: { required?: boolean }) => string;
 
 export function readActionConfig(getInput: InputGetter): ActionConfig {
   const pullNumberInput = getInput("pull-number").trim();
+  const providerInput = getInput("provider").trim().toLowerCase() || "openai";
   const language = getInput("language").trim() || "auto";
   const reasoningEffort = getInput("reasoning-effort").trim() || "low";
   const minimumPermission = (getInput("minimum-permission").trim() ||
     "write") as PermissionLevel;
+
+  if (providerInput !== "openai" && providerInput !== "anthropic") {
+    throw new Error(
+      `Invalid provider '${providerInput}'. Use openai or anthropic.`,
+    );
+  }
+  const provider: AiProvider = providerInput;
+  const apiKey =
+    getInput("api-key").trim() ||
+    (provider === "openai" ? getInput("openai-api-key").trim() : "");
+
+  if (!apiKey) {
+    throw new Error(
+      `api-key is required for provider '${provider}'. Store it in GitHub Actions secrets.`,
+    );
+  }
 
   if (language !== "auto" && !BCP_47_PATTERN.test(language)) {
     throw new Error(
@@ -62,12 +81,13 @@ export function readActionConfig(getInput: InputGetter): ActionConfig {
 
   return {
     githubToken: getInput("github-token", { required: true }),
-    openAiApiKey: getInput("openai-api-key", { required: true }),
+    apiKey,
+    provider,
     pullNumber: pullNumberInput
       ? parseInteger(pullNumberInput, "pull-number", 1, Number.MAX_SAFE_INTEGER)
       : undefined,
     language,
-    model: getInput("model").trim() || "gpt-5.6-terra",
+    model: getInput("model").trim() || defaultModel(provider),
     reasoningEffort,
     viewerUrl: validateViewerUrl(getInput("viewer-url").trim()),
     command: getInput("command").trim() || "/pr-explain",
@@ -86,6 +106,10 @@ export function readActionConfig(getInput: InputGetter): ActionConfig {
     ),
     customInstructions: getInput("custom-instructions").trim(),
   };
+}
+
+function defaultModel(provider: AiProvider): string {
+  return provider === "anthropic" ? "claude-sonnet-5" : "gpt-5.6-terra";
 }
 
 export function parseLanguageOverride(
