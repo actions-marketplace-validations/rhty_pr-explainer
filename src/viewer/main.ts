@@ -66,7 +66,7 @@ async function renderFromLocation(): Promise<void> {
 
 function renderPayload(payload: ReportPayload): void {
   currentPayload = payload;
-  currentDocument = prepareReportDocument(payload.html);
+  currentDocument = prepareReportDocument(payload.html, mermaidRunnerUrl());
   const strings = translations(payload.language);
 
   document.documentElement.lang = strings.language;
@@ -81,6 +81,13 @@ function renderPayload(payload: ReportPayload): void {
   elements.frame.title = strings.frameTitle;
   elements.frame.srcdoc = currentDocument;
   showState("report");
+}
+
+function mermaidRunnerUrl(): string {
+  const url = new URL("mermaid-runner.js", window.location.href);
+  url.hash = "";
+  url.search = "";
+  return url.href;
 }
 
 async function loadLocalHtml(file: File): Promise<void> {

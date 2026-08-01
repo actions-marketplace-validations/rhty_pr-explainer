@@ -1,9 +1,12 @@
 import createDOMPurify from "dompurify";
 
 const MERMAID_URL =
-  "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.esm.min.mjs";
+  "https://cdn.jsdelivr.net/npm/mermaid@11.16.0/dist/mermaid.min.js";
 
-export function prepareReportDocument(html: string): string {
+export function prepareReportDocument(
+  html: string,
+  mermaidRunnerUrl = "https://rhty.github.io/pr-explainer/mermaid-runner.js",
+): string {
   const purifier = createDOMPurify(window);
   const sanitized = purifier.sanitize(html, {
     WHOLE_DOCUMENT: true,
@@ -28,7 +31,7 @@ export function prepareReportDocument(html: string): string {
 
   hardenElements(documentNode);
   injectSecurityPolicy(documentNode);
-  injectMermaid(documentNode);
+  injectMermaid(documentNode, mermaidRunnerUrl);
 
   return `<!doctype html>\n${documentNode.documentElement.outerHTML}`;
 }
@@ -109,51 +112,46 @@ function injectSecurityPolicy(documentNode: Document): void {
   documentNode.head.prepend(policy, referrer);
 }
 
-function injectMermaid(documentNode: Document): void {
+function injectMermaid(documentNode: Document, mermaidRunnerUrl: string): void {
   if (!documentNode.querySelector(".mermaid")) return;
+  if (!isHttpsUrl(mermaidRunnerUrl) && !isLocalhostUrl(mermaidRunnerUrl)) {
+    return;
+  }
 
-  const nonce = createNonce();
   const policy = documentNode.querySelector<HTMLMetaElement>(
     'meta[http-equiv="Content-Security-Policy"]',
   );
   if (policy) {
+    const scriptSources = [MERMAID_URL, mermaidRunnerUrl]
+      .map((value) => new URL(value).origin)
+      .join(" ");
     policy.content = policy.content.replace(
       "script-src 'none'",
-      `script-src 'nonce-${nonce}' https://cdn.jsdelivr.net`,
+      `script-src ${scriptSources}`,
     );
   }
 
-  const script = documentNode.createElement("script");
-  script.type = "module";
-  script.setAttribute("nonce", nonce);
-  script.textContent = `
-    import mermaid from ${JSON.stringify(MERMAID_URL)};
-    mermaid.initialize({
-      startOnLoad: false,
-      securityLevel: "strict",
-      maxTextSize: 50000,
-      maxEdges: 500,
-      theme: "default"
-    });
-    try {
-      await mermaid.run({ nodes: document.querySelectorAll(".mermaid") });
-    } catch (error) {
-      console.warn("PR Explainer could not render a Mermaid diagram.", error);
-    }
-  `;
-  documentNode.body.append(script);
-}
-
-function createNonce(): string {
-  const bytes = crypto.getRandomValues(new Uint8Array(18));
-  return Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join(
-    "",
-  );
+  const mermaid = documentNode.createElement("script");
+  mermaid.src = MERMAID_URL;
+  mermaid.defer = true;
+  const runner = documentNode.createElement("script");
+  runner.src = mermaidRunnerUrl;
+  runner.defer = true;
+  documentNode.body.append(mermaid, runner);
 }
 
 function isHttpsUrl(value: string): boolean {
   try {
     return new URL(value).protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+function isLocalhostUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" && url.hostname === "localhost";
   } catch {
     return false;
   }

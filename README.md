@@ -58,7 +58,7 @@ jobs:
 
     steps:
       - name: Generate interactive PR explanation
-        uses: rhty/pr-explainer@v0.2.0
+        uses: rhty/pr-explainer@v0.2.1
         with:
           github-token: ${{ github.token }}
           provider: openai

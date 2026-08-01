@@ -26,9 +26,22 @@ describe("report sanitization", () => {
     expect(parsed.querySelector('link[rel="stylesheet"]')).not.toBeNull();
   });
 
+  it("preserves embedded CSS for rich reports", () => {
+    const output = prepareReportDocument(`<!doctype html>
+      <html><head><style>.card { color: rebeccapurple; }</style></head>
+      <body><article class="card">Styled report</article></body></html>`);
+    const parsed = new DOMParser().parseFromString(output, "text/html");
+
+    expect(parsed.querySelector("style")?.textContent).toContain(
+      "color: rebeccapurple",
+    );
+    expect(parsed.querySelector(".card")?.textContent).toBe("Styled report");
+  });
+
   it("injects only the viewer-owned Mermaid runtime", () => {
     const output = prepareReportDocument(
       '<html><body><pre class="mermaid">graph LR; A-->B</pre></body></html>',
+      "https://viewer.example/mermaid-runner.js",
     );
     const parsed = new DOMParser().parseFromString(output, "text/html");
     const scripts = parsed.querySelectorAll("script");
@@ -36,9 +49,12 @@ describe("report sanitization", () => {
       'meta[http-equiv="Content-Security-Policy"]',
     );
 
-    expect(scripts).toHaveLength(1);
-    expect(scripts[0]?.textContent).toContain("mermaid@11.16.0");
+    expect(scripts).toHaveLength(2);
+    expect(scripts[0]?.src).toContain("mermaid@11.16.0");
+    expect(scripts[1]?.src).toBe("https://viewer.example/mermaid-runner.js");
+    expect(scripts[0]?.textContent).toBe("");
+    expect(scripts[1]?.textContent).toBe("");
     expect(policy?.content).toContain("https://cdn.jsdelivr.net");
-    expect(scripts[0]?.getAttribute("nonce")).toBeTruthy();
+    expect(policy?.content).toContain("https://viewer.example");
   });
 });
