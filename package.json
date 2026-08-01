@@ -5,7 +5,7 @@
   "description": "Turn GitHub pull requests into interactive, AI-generated HTML explanations.",
   "license": "MIT",
   "engines": {
-    "node": ">=20"
+    "node": ">=24"
   },
   "scripts": {
     "build": "npm run build:action && npm run build:viewer",

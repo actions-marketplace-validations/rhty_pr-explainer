@@ -60,5 +60,5 @@ outputs:
     description: UTF-8 size of the generated HTML before compression.
 
 runs:
-  using: node20
+  using: node24
   main: dist/action/index.js

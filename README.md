@@ -150,6 +150,8 @@ in the browser.
 
 ## Development
 
+Node.js 24 or later is required.
+
 ```bash
 npm install
 npm run dev
