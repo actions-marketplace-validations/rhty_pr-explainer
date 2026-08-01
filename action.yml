@@ -1,0 +1,64 @@
+name: PR Explainer
+description: Turn a pull request into a shareable, interactive HTML explanation.
+author: rhty
+branding:
+  icon: book-open
+  color: purple
+
+inputs:
+  github-token:
+    description: Token used to read the pull request and publish its report link.
+    required: true
+  openai-api-key:
+    description: OpenAI API key used to generate the HTML explanation.
+    required: true
+  pull-number:
+    description: Pull request number. Inferred from issue_comment and pull_request events when omitted.
+    required: false
+  language:
+    description: BCP 47 report language, or auto to infer it from the PR title and body.
+    default: auto
+    required: false
+  model:
+    description: OpenAI model used to generate the explanation.
+    default: gpt-5.6-terra
+    required: false
+  reasoning-effort:
+    description: OpenAI reasoning effort (none, low, medium, high, xhigh, or max).
+    default: low
+    required: false
+  viewer-url:
+    description: Base URL of the static PR Explainer viewer.
+    default: https://rhty.github.io/pr-explainer/
+    required: false
+  command:
+    description: PR comment command. A --lang override is read from the same comment.
+    default: /pr-explain
+    required: false
+  minimum-permission:
+    description: Minimum repository permission required to invoke the action (read, triage, write, maintain, or admin).
+    default: write
+    required: false
+  max-diff-chars:
+    description: Maximum number of patch characters sent to the model.
+    default: "180000"
+    required: false
+  max-url-chars:
+    description: Maximum report URL length accepted before the action fails safely.
+    default: "48000"
+    required: false
+  custom-instructions:
+    description: Optional additional instructions appended to the report-generation prompt.
+    required: false
+
+outputs:
+  report-url:
+    description: URL of the generated interactive explanation.
+  report-language:
+    description: Resolved BCP 47 language of the report.
+  report-bytes:
+    description: UTF-8 size of the generated HTML before compression.
+
+runs:
+  using: node20
+  main: dist/action/index.js

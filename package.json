@@ -1,0 +1,36 @@
+{
+  "name": "pr-explainer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Turn GitHub pull requests into interactive, AI-generated HTML explanations.",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "build": "npm run build:action && npm run build:viewer",
+    "build:action": "ncc build src/action/index.ts -o dist/action --source-map --license licenses.txt",
+    "build:viewer": "vite build",
+    "check": "npm run format:check && npm run typecheck && npm test && npm run build",
+    "dev": "vite",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "test": "vitest run --config vitest.config.mts",
+    "test:watch": "vitest --config vitest.config.mts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@actions/core": "3.0.1",
+    "@actions/github": "9.1.1",
+    "dompurify": "3.4.12"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@vercel/ncc": "0.44.1",
+    "jsdom": "^26.0.0",
+    "prettier": "^3.6.0",
+    "typescript": "^5.9.3",
+    "vite": "8.2.0",
+    "vitest": "4.1.10"
+  }
+}

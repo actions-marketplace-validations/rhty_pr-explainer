@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="referrer" content="no-referrer" />
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; frame-src 'self'; object-src 'none'; base-uri 'none'; form-action 'none'"
+    />
+    <meta
+      name="description"
+      content="Open interactive, AI-generated pull request explanations entirely in your browser."
+    />
+    <title>PR Explainer</title>
+  </head>
+  <body>
+    <div class="app" id="viewer-shell">
+      <header class="topbar">
+        <a class="brand" href="./" aria-label="PR Explainer home">
+          <span class="brand-mark" aria-hidden="true"
+            ><i></i><i></i><i></i
+          ></span>
+          <span>PR Explainer</span>
+        </a>
+        <nav class="topbar-links" aria-label="Project links">
+          <a
+            href="https://github.com/rhty/pr-explainer"
+            target="_blank"
+            rel="noreferrer"
+            >GitHub ↗</a
+          >
+        </nav>
+      </header>
+
+      <main class="workspace">
+        <section class="empty-state" id="empty-state">
+          <div class="eyebrow"><span></span> Browser-only HTML viewer</div>
+          <h1>Understand the change,<br /><em>not just the diff.</em></h1>
+          <p class="lede">
+            PR Explainer turns pull requests into rich, interactive HTML
+            reports. Reports are compressed into the URL and opened locally in
+            your browser—no report backend or database.
+          </p>
+
+          <label class="drop-zone" id="drop-zone" for="html-file">
+            <span class="drop-icon" aria-hidden="true">↥</span>
+            <span
+              ><strong>Open an HTML report</strong
+              ><small>Choose or drop a file · 250 KB max</small></span
+            >
+            <input id="html-file" type="file" accept="text/html,.html,.htm" />
+          </label>
+
+          <div class="privacy-note">
+            <span aria-hidden="true">◉</span>
+            <p>
+              <strong>Private by architecture.</strong> Report data is carried
+              in the URL fragment and decoded on this device. Anyone with the
+              complete link can read it, so treat a private PR link as
+              sensitive.
+            </p>
+          </div>
+        </section>
+
+        <section class="error-state" id="error-state" hidden>
+          <span class="error-code">REPORT_ERROR</span>
+          <h1>This report could not be opened.</h1>
+          <p id="error-message"></p>
+          <div class="error-actions">
+            <button id="retry" type="button">Try again</button>
+            <a href="./">Return home</a>
+          </div>
+        </section>
+
+        <section class="report-state" id="report-state" hidden>
+          <div class="report-toolbar">
+            <div class="report-identity">
+              <h1 id="report-title"></h1>
+              <p id="report-meta"></p>
+            </div>
+            <div class="report-actions">
+              <a
+                id="open-pull"
+                class="button button-strong"
+                target="_blank"
+                rel="noreferrer"
+              ></a>
+              <button id="copy-link" class="button" type="button">
+                Copy link
+              </button>
+              <button id="download-report" class="button" type="button">
+                Save HTML
+              </button>
+            </div>
+          </div>
+          <iframe
+            id="report-frame"
+            sandbox="allow-scripts allow-popups allow-popups-to-escape-sandbox allow-downloads"
+            referrerpolicy="no-referrer"
+          ></iframe>
+        </section>
+      </main>
+
+      <div class="loading-bar" aria-hidden="true"></div>
+    </div>
+    <script type="module" src="/main.ts"></script>
+  </body>
+</html>
