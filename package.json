@@ -1,6 +1,6 @@
 {
   "name": "pr-explainer",
-  "version": "0.2.4",
+  "version": "0.2.5",
   "private": true,
   "description": "Turn GitHub pull requests into interactive, AI-generated HTML explanations.",
   "license": "MIT",
