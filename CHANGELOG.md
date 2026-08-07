@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.2.5 - 2026-08-07
+
+- Update version to v0.2.5.
+
+## 0.2.4 - 2026-08-06
+
+- Update version to v0.2.4.
+
 ## 0.2.1 - 2026-08-01
 
 - Allow report-owned embedded CSS and HTTPS assets through the parent Viewer policy.
